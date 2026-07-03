@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  getEstadoOrdenTrabajoLabel,
   obtenerFichaMantenimientoPorOrden,
   type FichaMantenimientoData,
 } from "@/services/mantenimiento.service";
@@ -74,7 +75,7 @@ export function FichaMantenimiento({ ordenId }: { ordenId: string }) {
         "Activo",
         `${orden.activoCodigo || ""} ${orden.activoNombre || ""}`.trim(),
       ],
-      ["Estado", orden.estado],
+      ["Estado", getEstadoOrdenTrabajoLabel(orden.estado)],
       ["Tipo", orden.tipoMantenimiento || emptyMessage],
       ["Especialidad", orden.especialidad || emptyMessage],
       [
@@ -144,7 +145,7 @@ export function FichaMantenimiento({ ordenId }: { ordenId: string }) {
         )}
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4 border-b border-slate-100">
-          <InfoCard title="Estado OT" value={orden.estado} />
+          <InfoCard title="Estado OT" value={getEstadoOrdenTrabajoLabel(orden.estado)} />
           <InfoCard
             title="Tipo"
             value={orden.tipoMantenimiento || emptyMessage}
@@ -164,7 +165,7 @@ export function FichaMantenimiento({ ordenId }: { ordenId: string }) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <Field label="Código OT" value={orden.codigo} />
               <Field label="Fecha programada" value={orden.fechaProgramada} />
-              <Field label="Estado" value={orden.estado} />
+              <Field label="Estado" value={getEstadoOrdenTrabajoLabel(orden.estado)} />
               <Field label="Prioridad" value={orden.prioridad} />
               <Field
                 label="Hora inicio"

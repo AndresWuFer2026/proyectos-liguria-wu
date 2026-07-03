@@ -27,7 +27,7 @@ async function contarOtPendientes() {
   const { count, error } = await supabase
     .from("ordenes_trabajo")
     .select("id", { count: "exact", head: true })
-    .not("estado", "in", "(CERRADA,CANCELADA,RECHAZADA)");
+    .not("estado", "in", "(CERRADA,CANCELADA)");
 
   if (error) {
     return 0;
@@ -60,7 +60,7 @@ async function contarPmVencidos() {
     .from("ordenes_trabajo")
     .select("id", { count: "exact", head: true })
     .lt("fecha_programada", new Date().toISOString())
-    .not("estado", "in", "(CERRADA,CANCELADA,RECHAZADA)");
+    .not("estado", "in", "(CERRADA,CANCELADA)");
 
   if (error) {
     return 0;

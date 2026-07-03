@@ -3,18 +3,27 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  actualizarParteActivo,
+  crearParteActivo,
+  eliminarDocumentoActivo,
+  eliminarParteActivo,
+  listarPartesActivo,
   obtenerActivoPorId,
   obtenerResumenExpedienteActivo,
   subirDocumentoActivo,
   type Activo,
   type DocumentoActivo,
   type DocumentoActivoTipo,
+  type EstadoParteActivo,
+  type ParteActivo,
+  type ParteActivoInput,
   type ResumenExpedienteActivo,
 } from "@/services/activos.service";
 import { getServiceErrorMessage } from "@/services/supabase-error";
 
 const tabs = [
   "Información",
+  "Partes / Componentes",
   "Documentación",
   "Programa PM",
   "OT",
@@ -30,13 +39,47 @@ const initialUpload = {
   observaciones: "",
 };
 
+const initialParteForm: ParteActivoInput = {
+  activoId: "",
+  nombre: "",
+  tipoParte: "",
+  descripcion: "",
+  criticidad: "Media",
+  frecuenciaRevisionSugerida: "",
+  estado: "Activo",
+  observaciones: "",
+};
+
+function buildQrPayload(activo: Activo) {
+  const expedientePath = `/activos/${activo.id}`;
+  const baseUrl =
+    typeof window === "undefined" ? "" : window.location.origin;
+
+  return JSON.stringify({
+    codigo: activo.codigo_activo,
+    id: activo.id,
+    expediente: `${baseUrl}${expedientePath}`,
+  });
+}
+
+function buildQrImageUrl(payload: string, size = 220) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`;
+}
+
 export function ExpedienteActivo({ activoId }: { activoId: string }) {
   const [activo, setActivo] = useState<Activo | null>(null);
   const [resumen, setResumen] = useState<ResumenExpedienteActivo | null>(null);
+  const [partes, setPartes] = useState<ParteActivo[]>([]);
   const [activeTab, setActiveTab] = useState("Información");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [savingPart, setSavingPart] = useState(false);
   const [uploadForm, setUploadForm] = useState(initialUpload);
+  const [parteForm, setParteForm] = useState<ParteActivoInput>({
+    ...initialParteForm,
+    activoId,
+  });
+  const [editingParteId, setEditingParteId] = useState<string | null>(null);
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -64,9 +107,10 @@ export function ExpedienteActivo({ activoId }: { activoId: string }) {
       }
 
       try {
-        const [activoData, resumenData] = await Promise.all([
+        const [activoData, resumenData, partesData] = await Promise.all([
           obtenerActivoPorId(activoId),
           obtenerResumenExpedienteActivo(activoId),
+          listarPartesActivo(activoId),
         ]);
 
         if (!mounted) {
@@ -77,17 +121,21 @@ export function ExpedienteActivo({ activoId }: { activoId: string }) {
           setErrorMessage("Activo no encontrado.");
           setActivo(null);
           setResumen(null);
+          setPartes([]);
           return;
         }
 
         setActivo(activoData);
         setResumen(resumenData);
+        setPartes(partesData);
+        setParteForm((prev) => ({ ...prev, activoId }));
       } catch (error) {
         console.error("Error cargando activo:", error);
         if (mounted) {
           setErrorMessage(getServiceErrorMessage(error));
           setActivo(null);
           setResumen(null);
+          setPartes([]);
         }
       } finally {
         if (mounted) {
@@ -106,6 +154,83 @@ export function ExpedienteActivo({ activoId }: { activoId: string }) {
   async function recargarResumen() {
     const resumenData = await obtenerResumenExpedienteActivo(activoId);
     setResumen(resumenData);
+  }
+
+  async function recargarActivo() {
+    const activoData = await obtenerActivoPorId(activoId);
+    if (activoData) {
+      setActivo(activoData);
+    }
+  }
+
+  async function recargarPartes() {
+    const partesData = await listarPartesActivo(activoId);
+    setPartes(partesData);
+  }
+
+  function resetParteForm() {
+    setParteForm({ ...initialParteForm, activoId });
+    setEditingParteId(null);
+  }
+
+  function editarParte(parte: ParteActivo) {
+    setParteForm({
+      activoId,
+      nombre: parte.nombre,
+      tipoParte: parte.tipoParte ?? "",
+      descripcion: parte.descripcion ?? "",
+      criticidad: parte.criticidad ?? "",
+      frecuenciaRevisionSugerida: parte.frecuenciaRevisionSugerida ?? "",
+      estado: parte.estado === "Inactivo" ? "Inactivo" : "Activo",
+      observaciones: parte.observaciones ?? "",
+    });
+    setEditingParteId(parte.id);
+    setActiveTab("Partes / Componentes");
+  }
+
+  async function guardarParte() {
+    setStatusMessage(null);
+
+    if (!parteForm.nombre.trim()) {
+      setStatusMessage("Ingresa el nombre de la parte o componente.");
+      return;
+    }
+
+    try {
+      setSavingPart(true);
+
+      if (editingParteId) {
+        await actualizarParteActivo(editingParteId, parteForm);
+        setStatusMessage("Parte actualizada correctamente.");
+      } else {
+        await crearParteActivo({ ...parteForm, activoId });
+        setStatusMessage("Parte agregada correctamente.");
+      }
+
+      resetParteForm();
+      await recargarPartes();
+    } catch (error) {
+      console.error("Error guardando parte:", error);
+      setStatusMessage(getServiceErrorMessage(error));
+    } finally {
+      setSavingPart(false);
+    }
+  }
+
+  async function desactivarParte(id: string) {
+    setStatusMessage(null);
+
+    try {
+      setSavingPart(true);
+      await eliminarParteActivo(id);
+      setStatusMessage("Parte desactivada correctamente.");
+      await recargarPartes();
+    } catch (error) {
+      console.error("Error desactivando parte:", error);
+      setStatusMessage(getServiceErrorMessage(error));
+    } finally {
+      setSavingPart(false);
+    }
   }
 
   async function subirDocumento() {
@@ -156,12 +281,50 @@ export function ExpedienteActivo({ activoId }: { activoId: string }) {
       });
       setPhotoFile(null);
       setStatusMessage("Foto cargada correctamente.");
-      await recargarResumen();
+      await Promise.all([recargarResumen(), recargarActivo()]);
     } catch (error) {
       console.error("Error subiendo foto:", error);
       setStatusMessage(getServiceErrorMessage(error));
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function desactivarDocumento(documento: DocumentoActivo) {
+    setStatusMessage(null);
+
+    try {
+      setUploading(true);
+      await eliminarDocumentoActivo(documento);
+      setStatusMessage("Archivo desactivado correctamente.");
+      await Promise.all([recargarResumen(), recargarActivo()]);
+    } catch (error) {
+      console.error("Error desactivando documento:", error);
+      setStatusMessage(getServiceErrorMessage(error));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function descargarQr() {
+    if (!activo) {
+      return;
+    }
+
+    const qrPayload = buildQrPayload(activo);
+    const qrImageUrl = buildQrImageUrl(qrPayload, 512);
+
+    try {
+      const response = await fetch(qrImageUrl);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `QR-${activo.codigo_activo}.png`;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(qrImageUrl, "_blank", "noopener,noreferrer");
     }
   }
 
@@ -183,7 +346,10 @@ export function ExpedienteActivo({ activoId }: { activoId: string }) {
     activo.ubicacion_nombre && activo.ubicacion_codigo
       ? `${activo.ubicacion_codigo} - ${activo.ubicacion_nombre}`
       : activo.ubicacion_nombre || "No registrado";
-  const fotoPrincipal = resumen?.fotografias[0]?.archivoUrl;
+  const fotoPrincipal =
+    activo.foto_url || activo.imagen_url || resumen?.fotografias[0]?.archivoUrl;
+  const qrPayload = buildQrPayload(activo);
+  const qrImageUrl = buildQrImageUrl(qrPayload);
 
   return (
     <div className="p-8">
@@ -236,8 +402,20 @@ export function ExpedienteActivo({ activoId }: { activoId: string }) {
               )}
             </div>
 
-            <div className="mt-4 h-32 bg-slate-50 border border-dashed border-slate-300 rounded-lg flex items-center justify-center text-slate-400 text-sm px-4 text-center">
-              QR: {activo.qr_token || "No registrado"}
+            <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={qrImageUrl}
+                alt={`QR ${activo.codigo_activo}`}
+                className="mx-auto h-32 w-32 rounded bg-white p-1"
+              />
+              <button
+                type="button"
+                onClick={descargarQr}
+                className="mt-3 text-xs font-medium text-[#0F3D56] hover:underline"
+              >
+                Descargar QR
+              </button>
             </div>
           </div>
 
@@ -307,13 +485,24 @@ export function ExpedienteActivo({ activoId }: { activoId: string }) {
               tab={activeTab}
               activo={activo}
               resumen={resumen}
+              partes={partes}
+              parteForm={parteForm}
+              editingParteId={editingParteId}
+              savingPart={savingPart}
               uploading={uploading}
               uploadForm={uploadForm}
+              onParteFormChange={setParteForm}
+              onSaveParte={guardarParte}
+              onEditParte={editarParte}
+              onDeactivateParte={desactivarParte}
+              onCancelParte={resetParteForm}
               onUploadChange={setUploadForm}
               onDocumentFile={setDocumentFile}
               onPhotoFile={setPhotoFile}
               onUploadDocument={subirDocumento}
               onUploadPhoto={subirFoto}
+              onDeleteDocumento={desactivarDocumento}
+              onDownloadQr={descargarQr}
             />
           </div>
         </div>
@@ -326,24 +515,46 @@ function TabContent({
   tab,
   activo,
   resumen,
+  partes,
+  parteForm,
+  editingParteId,
+  savingPart,
   uploading,
   uploadForm,
+  onParteFormChange,
+  onSaveParte,
+  onEditParte,
+  onDeactivateParte,
+  onCancelParte,
   onUploadChange,
   onDocumentFile,
   onPhotoFile,
   onUploadDocument,
   onUploadPhoto,
+  onDeleteDocumento,
+  onDownloadQr,
 }: {
   tab: string;
   activo: Activo;
   resumen: ResumenExpedienteActivo | null;
+  partes: ParteActivo[];
+  parteForm: ParteActivoInput;
+  editingParteId: string | null;
+  savingPart: boolean;
   uploading: boolean;
   uploadForm: typeof initialUpload;
+  onParteFormChange: (value: ParteActivoInput) => void;
+  onSaveParte: () => void;
+  onEditParte: (parte: ParteActivo) => void;
+  onDeactivateParte: (id: string) => void;
+  onCancelParte: () => void;
   onUploadChange: (value: typeof initialUpload) => void;
   onDocumentFile: (file: File | null) => void;
   onPhotoFile: (file: File | null) => void;
   onUploadDocument: () => void;
   onUploadPhoto: () => void;
+  onDeleteDocumento: (documento: DocumentoActivo) => void;
+  onDownloadQr: () => void;
 }) {
   if (tab === "Información") {
     return (
@@ -352,6 +563,22 @@ function TabContent({
         <Field label="Familia" value={activo.familia} />
         <Field label="Tipo" value={activo.tipo_equipo} />
       </div>
+    );
+  }
+
+  if (tab === "Partes / Componentes") {
+    return (
+      <PartesActivoSection
+        partes={partes}
+        form={parteForm}
+        editingId={editingParteId}
+        saving={savingPart}
+        onChange={onParteFormChange}
+        onSave={onSaveParte}
+        onEdit={onEditParte}
+        onDeactivate={onDeactivateParte}
+        onCancel={onCancelParte}
+      />
     );
   }
 
@@ -365,7 +592,11 @@ function TabContent({
           onFile={onDocumentFile}
           onUpload={onUploadDocument}
         />
-        <DocumentosList documentos={resumen?.documentos ?? []} />
+        <DocumentosList
+          documentos={resumen?.documentos ?? []}
+          disabled={uploading}
+          onDelete={onDeleteDocumento}
+        />
       </div>
     );
   }
@@ -392,7 +623,11 @@ function TabContent({
           onFile={onPhotoFile}
           onUpload={onUploadPhoto}
         />
-        <FotosList fotos={resumen?.fotografias ?? []} />
+        <FotosList
+          fotos={resumen?.fotografias ?? []}
+          disabled={uploading}
+          onDelete={onDeleteDocumento}
+        />
       </div>
     );
   }
@@ -427,18 +662,248 @@ function TabContent({
   }
 
   if (tab === "QR") {
+    const qrPayload = buildQrPayload(activo);
+    const qrImageUrl = buildQrImageUrl(qrPayload, 260);
+
     return (
       <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-600">
-        <Field label="Token QR" value={activo.qr_token} />
-        <p className="mt-3 text-xs text-slate-500">
-          El técnico puede pegar este token o el código del activo en su centro de
-          trabajo para abrir el expediente.
-        </p>
+        <div className="flex flex-col gap-5 md:flex-row md:items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={qrImageUrl}
+            alt={`QR ${activo.codigo_activo}`}
+            className="h-40 w-40 rounded-lg border border-slate-200 bg-white p-2"
+          />
+          <div className="space-y-3">
+            <Field label="CÃ³digo" value={activo.codigo_activo} />
+            <Field label="ID del activo" value={activo.id} />
+            <Field label="Ruta expediente" value={`/activos/${activo.id}`} />
+            <button
+              type="button"
+              onClick={onDownloadQr}
+              className="rounded-lg bg-[#0F3D56] px-4 py-2 text-sm font-medium text-white hover:bg-[#0b2c40]"
+            >
+              Descargar QR
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return <p className="text-sm text-slate-500">No se ingresó información.</p>;
+}
+
+function PartesActivoSection({
+  partes,
+  form,
+  editingId,
+  saving,
+  onChange,
+  onSave,
+  onEdit,
+  onDeactivate,
+  onCancel,
+}: {
+  partes: ParteActivo[];
+  form: ParteActivoInput;
+  editingId: string | null;
+  saving: boolean;
+  onChange: (value: ParteActivoInput) => void;
+  onSave: () => void;
+  onEdit: (parte: ParteActivo) => void;
+  onDeactivate: (id: string) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <div className="mb-4">
+          <h3 className="font-semibold text-slate-800">
+            {editingId ? "Editar parte / componente" : "Agregar parte / componente"}
+          </h3>
+          <p className="text-sm text-slate-500">
+            Registra componentes internos del activo sin crear un nuevo activo.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ParteInput
+            label="Nombre"
+            value={form.nombre}
+            onChange={(value) => onChange({ ...form, nombre: value })}
+            placeholder="Motor eléctrico"
+          />
+          <ParteInput
+            label="Tipo de parte"
+            value={form.tipoParte}
+            onChange={(value) => onChange({ ...form, tipoParte: value })}
+            placeholder="Eléctrico, mecánico, estructural..."
+          />
+          <ParteInput
+            label="Frecuencia sugerida"
+            value={form.frecuenciaRevisionSugerida}
+            onChange={(value) =>
+              onChange({ ...form, frecuenciaRevisionSugerida: value })
+            }
+            placeholder="Mensual, trimestral..."
+          />
+
+          <ParteSelect
+            label="Criticidad"
+            value={form.criticidad}
+            onChange={(value) =>
+              onChange({
+                ...form,
+                criticidad: value as ParteActivoInput["criticidad"],
+              })
+            }
+            options={[
+              { value: "", label: "Sin definir" },
+              { value: "Alta", label: "Alta" },
+              { value: "Media", label: "Media" },
+              { value: "Baja", label: "Baja" },
+            ]}
+          />
+          <ParteSelect
+            label="Estado"
+            value={form.estado}
+            onChange={(value) =>
+              onChange({ ...form, estado: value as EstadoParteActivo })
+            }
+            options={[
+              { value: "Activo", label: "Activo" },
+              { value: "Inactivo", label: "Inactivo" },
+            ]}
+          />
+          <ParteInput
+            label="Observaciones"
+            value={form.observaciones}
+            onChange={(value) => onChange({ ...form, observaciones: value })}
+            placeholder="Notas rápidas"
+          />
+
+          <div className="md:col-span-3">
+            <ParteTextarea
+              label="Descripción"
+              value={form.descripcion}
+              onChange={(value) => onChange({ ...form, descripcion: value })}
+              placeholder="Descripción técnica o ubicación dentro del activo"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-3">
+          {editingId && (
+            <button
+              onClick={onCancel}
+              disabled={saving}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-white disabled:text-slate-300"
+            >
+              Cancelar edición
+            </button>
+          )}
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 disabled:bg-slate-300"
+          >
+            {saving ? "Guardando..." : editingId ? "Actualizar parte" : "Agregar parte"}
+          </button>
+        </div>
+      </div>
+
+      <PartesActivoList
+        partes={partes}
+        saving={saving}
+        onEdit={onEdit}
+        onDeactivate={onDeactivate}
+      />
+    </div>
+  );
+}
+
+function PartesActivoList({
+  partes,
+  saving,
+  onEdit,
+  onDeactivate,
+}: {
+  partes: ParteActivo[];
+  saving: boolean;
+  onEdit: (parte: ParteActivo) => void;
+  onDeactivate: (id: string) => void;
+}) {
+  if (partes.length === 0) {
+    return <p className="text-sm text-slate-500">No se ingresó información.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {partes.map((parte) => (
+        <div
+          key={parte.id}
+          className="rounded-lg border border-slate-200 p-4"
+        >
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-semibold text-slate-800">{parte.nombre}</p>
+                <Badge value={parte.criticidad || "Sin criticidad"} />
+                <Badge value={parte.estado || "Activo"} />
+              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                {parte.tipoParte || "Tipo no registrado"} /{" "}
+                {parte.frecuenciaRevisionSugerida || "Sin frecuencia sugerida"}
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                {parte.descripcion || "No se ingresó información."}
+              </p>
+              {parte.observaciones && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Observaciones: {parte.observaciones}
+                </p>
+              )}
+            </div>
+
+            <div className="flex shrink-0 gap-3">
+              <button
+                onClick={() => onEdit(parte)}
+                disabled={saving}
+                className="text-sm font-medium text-[#0F3D56] hover:underline disabled:text-slate-300"
+              >
+                Editar
+              </button>
+              {parte.estado !== "Inactivo" && (
+                <button
+                  onClick={() => onDeactivate(parte.id)}
+                  disabled={saving}
+                  className="text-sm font-medium text-red-600 hover:underline disabled:text-slate-300"
+                >
+                  Desactivar
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Badge({ value }: { value: string }) {
+  const isInactive = value === "Inactivo";
+  return (
+    <span
+      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+        isInactive
+          ? "bg-slate-100 text-slate-500"
+          : "bg-teal-50 text-teal-700"
+      }`}
+    >
+      {value}
+    </span>
+  );
 }
 
 function UploadDocumento({
@@ -528,7 +993,15 @@ function UploadFoto({
   );
 }
 
-function DocumentosList({ documentos }: { documentos: DocumentoActivo[] }) {
+function DocumentosList({
+  documentos,
+  disabled,
+  onDelete,
+}: {
+  documentos: DocumentoActivo[];
+  disabled: boolean;
+  onDelete: (documento: DocumentoActivo) => void;
+}) {
   if (documentos.length === 0) {
     return <p className="text-sm text-slate-500">No se ingresó información.</p>;
   }
@@ -548,23 +1021,42 @@ function DocumentosList({ documentos }: { documentos: DocumentoActivo[] }) {
               {documento.tipo || "OTRO"} / {documento.observaciones || "Sin observaciones"}
             </p>
           </div>
-          {documento.archivoUrl && (
-            <a
-              href={documento.archivoUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm font-medium text-[#0F3D56] hover:underline"
+          <div className="flex items-center gap-3">
+            {documento.archivoUrl && (
+              <a
+                href={documento.archivoUrl}
+                target="_blank"
+                rel="noreferrer"
+                download
+                className="text-sm font-medium text-[#0F3D56] hover:underline"
+              >
+                Descargar
+              </a>
+            )}
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onDelete(documento)}
+              className="text-sm font-medium text-red-600 hover:underline disabled:text-slate-300"
             >
-              Ver archivo
-            </a>
-          )}
+              Desactivar
+            </button>
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
-function FotosList({ fotos }: { fotos: DocumentoActivo[] }) {
+function FotosList({
+  fotos,
+  disabled,
+  onDelete,
+}: {
+  fotos: DocumentoActivo[];
+  disabled: boolean;
+  onDelete: (documento: DocumentoActivo) => void;
+}) {
   if (fotos.length === 0) {
     return <p className="text-sm text-slate-500">No se ingresó información.</p>;
   }
@@ -590,6 +1082,27 @@ function FotosList({ fotos }: { fotos: DocumentoActivo[] }) {
             <p className="text-sm text-slate-500">
               {foto.observaciones || "Sin observaciones"}
             </p>
+            <div className="mt-3 flex items-center gap-3">
+              {foto.archivoUrl && (
+                <a
+                  href={foto.archivoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  download
+                  className="text-sm font-medium text-[#0F3D56] hover:underline"
+                >
+                  Descargar
+                </a>
+              )}
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onDelete(foto)}
+                className="text-sm font-medium text-red-600 hover:underline disabled:text-slate-300"
+              >
+                Desactivar
+              </button>
+            </div>
           </div>
         </div>
       ))}
@@ -654,6 +1167,84 @@ function OrdenesList({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ParteInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="text-sm text-slate-600">{label}</label>
+      <input
+        className="mt-1 w-full rounded-lg border border-slate-200 px-4 py-2 text-sm"
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+function ParteTextarea({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="text-sm text-slate-600">{label}</label>
+      <textarea
+        className="mt-1 w-full rounded-lg border border-slate-200 px-4 py-2 text-sm"
+        rows={3}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+function ParteSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <label className="text-sm text-slate-600">{label}</label>
+      <select
+        className="mt-1 w-full rounded-lg border border-slate-200 px-4 py-2 text-sm"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value || "empty"} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

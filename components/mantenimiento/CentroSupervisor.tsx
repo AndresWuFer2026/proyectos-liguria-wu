@@ -7,6 +7,7 @@ import {
   actualizarEstadoOrdenTrabajo,
   asignarTecnicoOrdenTrabajo,
   cerrarOrdenTrabajo,
+  getEstadoOrdenTrabajoLabel,
   listarOrdenesTrabajo,
   reprogramarOrdenTrabajo,
   type OrdenTrabajo,
@@ -68,15 +69,15 @@ export function CentroSupervisor() {
   }, [cargarOrdenes]);
 
   const pendientesAprobacion = useMemo(
-    () => ordenes.filter((orden) => orden.estado === "PENDIENTE_APROBACION"),
+    () => ordenes.filter((orden) => orden.estado === "PENDIENTE"),
     [ordenes]
   );
   const pendientesValidacion = useMemo(
-    () => ordenes.filter((orden) => orden.estado === "PENDIENTE_VALIDACION"),
+    () => ordenes.filter((orden) => orden.estado === "VALIDACION"),
     [ordenes]
   );
   const aprobadas = useMemo(
-    () => ordenes.filter((orden) => orden.estado === "APROBADA"),
+    () => ordenes.filter((orden) => orden.estado === "PROGRAMADA"),
     [ordenes]
   );
   const enEjecucion = useMemo(
@@ -183,14 +184,14 @@ export function CentroSupervisor() {
                   orden={orden}
                   onAprobar={() =>
                     ejecutarAccion(
-                      () => actualizarEstadoOrdenTrabajo(orden.id, "APROBADA"),
-                      "OT aprobada."
+                      () => actualizarEstadoOrdenTrabajo(orden.id, "PROGRAMADA"),
+                      "OT programada."
                     )
                   }
                   onRechazar={() =>
                     ejecutarAccion(
-                      () => actualizarEstadoOrdenTrabajo(orden.id, "RECHAZADA"),
-                      "OT rechazada."
+                      () => actualizarEstadoOrdenTrabajo(orden.id, "CANCELADA"),
+                      "OT cancelada."
                     )
                   }
                   onAsignar={(tecnico) =>
@@ -270,7 +271,7 @@ function OtRow({
       </td>
       <td className="px-6 py-4">
         <span className="bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-xs font-medium">
-          {orden.estado}
+          {getEstadoOrdenTrabajoLabel(orden.estado)}
         </span>
       </td>
       <td className="px-6 py-4">
@@ -313,7 +314,7 @@ function OtRow({
           >
             Ficha
           </Link>
-          {orden.estado === "PENDIENTE_APROBACION" && (
+          {orden.estado === "PENDIENTE" && (
             <>
               <button
                 onClick={onAprobar}
@@ -349,7 +350,7 @@ function OtRow({
               Reprogramar
             </button>
           )}
-          {orden.estado === "PENDIENTE_VALIDACION" && (
+          {orden.estado === "VALIDACION" && (
             <button
               onClick={onValidar}
               className="text-teal-600 font-medium hover:underline"

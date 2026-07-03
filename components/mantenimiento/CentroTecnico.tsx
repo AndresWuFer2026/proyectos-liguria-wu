@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   crearOrdenTrabajo,
+  getEstadoOrdenTrabajoLabel,
   iniciarEjecucionOrdenTrabajo,
   listarOrdenesTrabajo,
   registrarEjecucionOrdenTrabajo,
@@ -130,7 +131,7 @@ export function CentroTecnico() {
     () =>
       ordenes.filter((orden) => {
         const esOperativa =
-          orden.estado === "ASIGNADA" || orden.estado === "EN_EJECUCION";
+          orden.estado === "PROGRAMADA" || orden.estado === "EN_EJECUCION";
         const asignadaAlUsuario =
           !orden.tecnicoAsignado || orden.tecnicoAsignado === user?.name;
         return esOperativa && asignadaAlUsuario;
@@ -559,7 +560,7 @@ export function CentroTecnico() {
                   </td>
                   <td className="px-6 py-4">
                     <span className="bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-xs font-medium">
-                      {orden.estado}
+                      {getEstadoOrdenTrabajoLabel(orden.estado)}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -570,7 +571,7 @@ export function CentroTecnico() {
                       >
                         Ficha
                       </Link>
-                      {orden.estado === "ASIGNADA" && (
+                      {orden.estado === "PROGRAMADA" && (
                         <button
                           onClick={() => iniciar(orden.id)}
                           className="text-[#0F3D56] font-medium hover:underline"

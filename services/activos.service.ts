@@ -47,6 +47,9 @@ export type Activo = {
   criticidad: string | null;
   responsable: string | null;
   qr_token?: string | null;
+  qr_data?: string | null;
+  foto_url?: string | null;
+  imagen_url?: string | null;
   ultimo_mantenimiento?: string | null;
   proximo_mantenimiento?: string | null;
   ubicacion_codigo?: string | null;
@@ -70,7 +73,10 @@ export type DocumentoActivo = {
   bucket: string | null;
   mimeType: string | null;
   observaciones: string | null;
+  estado: string | null;
+  uploadedBy: string | null;
   createdAt: string | null;
+  sourceTable: string | null;
 };
 
 export type DocumentoActivoInput = {
@@ -80,6 +86,38 @@ export type DocumentoActivoInput = {
   observaciones: string;
   file: File;
 };
+
+export type CriticidadParteActivo = "Alta" | "Media" | "Baja";
+export type EstadoParteActivo = "Activo" | "Inactivo";
+
+export type ParteActivo = {
+  id: string;
+  activoId: string;
+  nombre: string;
+  tipoParte: string | null;
+  descripcion: string | null;
+  criticidad: CriticidadParteActivo | null;
+  frecuenciaRevisionSugerida: string | null;
+  estado: EstadoParteActivo | string;
+  observaciones: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type ParteActivoInput = {
+  activoId: string;
+  nombre: string;
+  tipoParte: string;
+  descripcion: string;
+  criticidad: CriticidadParteActivo | "";
+  frecuenciaRevisionSugerida: string;
+  estado: EstadoParteActivo;
+  observaciones: string;
+};
+
+export type ParteActivoUpdateInput = Partial<
+  Omit<ParteActivoInput, "activoId">
+>;
 
 export type IndicadoresActivo = {
   disponibilidad: string;
@@ -164,19 +202,97 @@ function getString(row: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
-function normalizeDocumento(row: Record<string, unknown>): DocumentoActivo {
+function normalizeDocumento(
+  row: Record<string, unknown>,
+  sourceTable: string | null = null
+): DocumentoActivo {
   return {
     id: String(row.id),
-    activoId: getString(row, ["equipo_id", "activo_id"]),
-    tipo: getString(row, ["tipo_documento", "tipo"]),
-    nombre: getString(row, ["nombre", "titulo"]),
-    archivoUrl: getString(row, ["archivo_url", "url", "public_url"]),
+    activoId: getString(row, ["activo_id", "equipo_id"]),
+    tipo: getString(row, ["tipo_archivo", "tipo_documento", "tipo"]),
+    nombre: getString(row, ["nombre_archivo", "nombre", "titulo"]),
+    archivoUrl: getString(row, ["url", "archivo_url", "public_url"]),
     storagePath: getString(row, ["storage_path", "ruta_archivo", "path"]),
     bucket: getString(row, ["storage_bucket", "bucket"]),
     mimeType: getString(row, ["mime_type", "tipo_mime"]),
     observaciones: getString(row, ["observaciones", "descripcion"]),
+    estado: getString(row, ["estado"]),
+    uploadedBy: getString(row, ["uploaded_by"]),
     createdAt: getString(row, ["created_at", "fecha_carga"]),
+    sourceTable,
   };
+}
+
+function isDocumentoActivoVisible(documento: DocumentoActivo) {
+  return documento.estado !== "Inactivo";
+}
+
+function normalizeParteActivo(row: Record<string, unknown>): ParteActivo {
+  return {
+    id: String(row.id),
+    activoId: String(row.activo_id ?? ""),
+    nombre: String(row.nombre ?? ""),
+    tipoParte: getString(row, ["tipo_parte"]),
+    descripcion: getString(row, ["descripcion"]),
+    criticidad: getString(row, ["criticidad"]) as CriticidadParteActivo | null,
+    frecuenciaRevisionSugerida: getString(row, [
+      "frecuencia_revision_sugerida",
+    ]),
+    estado: getString(row, ["estado"]) || "Activo",
+    observaciones: getString(row, ["observaciones"]),
+    createdAt: getString(row, ["created_at"]),
+    updatedAt: getString(row, ["updated_at"]),
+  };
+}
+
+function nullableText(value: string | undefined) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const cleaned = cleanText(value);
+  return cleaned || null;
+}
+
+function buildParteActivoPayload(
+  data: Partial<ParteActivoInput>
+): Record<string, string | null> {
+  const payload: Record<string, string | null> = {};
+
+  if (typeof data.activoId === "string") {
+    payload.activo_id = data.activoId;
+  }
+
+  if (typeof data.nombre === "string") {
+    payload.nombre = cleanText(data.nombre);
+  }
+
+  if (typeof data.tipoParte === "string") {
+    payload.tipo_parte = nullableText(data.tipoParte) ?? null;
+  }
+
+  if (typeof data.descripcion === "string") {
+    payload.descripcion = nullableText(data.descripcion) ?? null;
+  }
+
+  if (typeof data.criticidad === "string") {
+    payload.criticidad = data.criticidad || null;
+  }
+
+  if (typeof data.frecuenciaRevisionSugerida === "string") {
+    payload.frecuencia_revision_sugerida =
+      nullableText(data.frecuenciaRevisionSugerida) ?? null;
+  }
+
+  if (typeof data.estado === "string") {
+    payload.estado = data.estado || "Activo";
+  }
+
+  if (typeof data.observaciones === "string") {
+    payload.observaciones = nullableText(data.observaciones) ?? null;
+  }
+
+  return payload;
 }
 
 async function fetchCatalogoActivo<T>(
@@ -387,10 +503,14 @@ export async function buscarActivoPorQrOCodigo(valor: string) {
 }
 
 export async function listarDocumentosActivo(activoId: string) {
-  const tableCandidates = ["documentos_activos", "documentos_equipo"];
+  const tableCandidates = [
+    "documentos_activo",
+    "documentos_activos",
+    "documentos_equipo",
+  ];
 
   for (const table of tableCandidates) {
-    for (const column of ["equipo_id", "activo_id"]) {
+    for (const column of ["activo_id", "equipo_id"]) {
       const { data, error } = await supabase
         .from(table)
         .select("*")
@@ -398,7 +518,9 @@ export async function listarDocumentosActivo(activoId: string) {
         .limit(100);
 
       if (!error) {
-        return ((data ?? []) as Record<string, unknown>[]).map(normalizeDocumento);
+        return ((data ?? []) as Record<string, unknown>[])
+          .map((row) => normalizeDocumento(row, table))
+          .filter(isDocumentoActivoVisible);
       }
 
       if (
@@ -411,6 +533,214 @@ export async function listarDocumentosActivo(activoId: string) {
   }
 
   return [];
+}
+
+async function actualizarFotoPrincipalActivo(activoId: string, publicUrl: string) {
+  let payload: Record<string, string> = {
+    foto_url: publicUrl,
+    imagen_url: publicUrl,
+  };
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("equipos")
+      .update(payload)
+      .eq("id", activoId);
+
+    if (!error) {
+      return;
+    }
+
+    const missingColumn = Object.keys(payload).find((column) =>
+      isMissingColumnError(error, column)
+    );
+
+    if (!missingColumn) {
+      console.warn("No se pudo actualizar foto principal:", error);
+      return;
+    }
+
+    const nextPayload = { ...payload };
+    delete nextPayload[missingColumn];
+    payload = nextPayload;
+  }
+}
+
+async function insertarDocumentoActivoMetadata(input: {
+  activoId: string;
+  tipo: DocumentoActivoTipo;
+  nombre: string;
+  publicUrl: string;
+  bucket: string;
+  storagePath: string;
+  mimeType: string | null;
+  observaciones: string;
+}) {
+  const nuevoPayload = {
+    activo_id: input.activoId,
+    nombre_archivo: input.nombre,
+    tipo_archivo: input.tipo,
+    url: input.publicUrl,
+    storage_path: input.storagePath,
+    storage_bucket: input.bucket,
+    mime_type: input.mimeType,
+    observaciones: input.observaciones,
+    estado: "Activo",
+  };
+
+  const nuevo = await supabase
+    .from("documentos_activo")
+    .insert(nuevoPayload)
+    .select()
+    .single();
+
+  if (!nuevo.error) {
+    return normalizeDocumento(
+      nuevo.data as Record<string, unknown>,
+      "documentos_activo"
+    );
+  }
+
+  const nuevoSchemaNoDisponible =
+    isMissingTableError(nuevo.error, "documentos_activo") ||
+    [
+      "activo_id",
+      "nombre_archivo",
+      "tipo_archivo",
+      "url",
+      "storage_path",
+      "storage_bucket",
+      "mime_type",
+      "observaciones",
+      "estado",
+    ].some((column) => isMissingColumnError(nuevo.error, column));
+
+  if (!nuevoSchemaNoDisponible) {
+    throw nuevo.error;
+  }
+
+  let anteriorPayload: Record<string, string | null> = {
+    equipo_id: input.activoId,
+    activo_id: input.activoId,
+    tipo_documento: input.tipo,
+    nombre: input.nombre,
+    archivo_url: input.publicUrl,
+    storage_bucket: input.bucket,
+    storage_path: input.storagePath,
+    mime_type: input.mimeType,
+    observaciones: input.observaciones,
+  };
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const anterior = await supabase
+      .from("documentos_activos")
+      .insert(anteriorPayload)
+      .select()
+      .single();
+
+    if (!anterior.error) {
+      return normalizeDocumento(
+        anterior.data as Record<string, unknown>,
+        "documentos_activos"
+      );
+    }
+
+    const missingColumn = Object.keys(anteriorPayload).find((column) =>
+      isMissingColumnError(anterior.error, column)
+    );
+
+    if (!missingColumn) {
+      throw anterior.error;
+    }
+
+    const nextPayload = { ...anteriorPayload };
+    delete nextPayload[missingColumn];
+    anteriorPayload = nextPayload;
+  }
+
+  throw new Error("No se pudo registrar el documento del activo.");
+}
+
+export async function listarPartesActivo(activoId: string) {
+  const { data, error } = await supabase
+    .from("partes_activo")
+    .select("*")
+    .eq("activo_id", activoId)
+    .order("estado", { ascending: true })
+    .order("nombre", { ascending: true });
+
+  if (error) {
+    if (isMissingTableError(error, "partes_activo")) {
+      return [];
+    }
+
+    throw error;
+  }
+
+  return ((data ?? []) as Record<string, unknown>[]).map(normalizeParteActivo);
+}
+
+export async function crearParteActivo(data: ParteActivoInput) {
+  const payload = buildParteActivoPayload(data);
+
+  if (!payload.activo_id || !payload.nombre) {
+    throw new Error("Completa activo y nombre de la parte.");
+  }
+
+  const { data: parte, error } = await supabase
+    .from("partes_activo")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeParteActivo(parte as Record<string, unknown>);
+}
+
+export async function actualizarParteActivo(
+  id: string,
+  data: ParteActivoUpdateInput
+) {
+  const payload = buildParteActivoPayload(data);
+
+  if (Object.keys(payload).length === 0) {
+    return null;
+  }
+
+  const { data: parte, error } = await supabase
+    .from("partes_activo")
+    .update(payload)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeParteActivo(parte as Record<string, unknown>);
+}
+
+export async function eliminarParteActivo(id: string) {
+  const { data: parte, error } = await supabase
+    .from("partes_activo")
+    .update({ estado: "Inactivo" })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeParteActivo(parte as Record<string, unknown>);
 }
 
 export async function subirDocumentoActivo(input: DocumentoActivoInput) {
@@ -430,28 +760,53 @@ export async function subirDocumentoActivo(input: DocumentoActivoInput) {
 
   const publicUrl = supabase.storage.from(bucket).getPublicUrl(storagePath).data
     .publicUrl;
-  const payload = {
-    equipo_id: input.activoId,
-    tipo_documento: input.tipo,
-    nombre: cleanText(input.nombre) || input.file.name,
-    archivo_url: publicUrl,
-    storage_bucket: bucket,
-    storage_path: storagePath,
-    mime_type: input.file.type || null,
-    observaciones: cleanText(input.observaciones),
-  };
 
-  const { data, error } = await supabase
-    .from("documentos_activos")
-    .insert(payload)
+  const documento = await insertarDocumentoActivoMetadata({
+    activoId: input.activoId,
+    tipo: input.tipo,
+    nombre: cleanText(input.nombre) || input.file.name,
+    publicUrl,
+    bucket,
+    storagePath,
+    mimeType: input.file.type || null,
+    observaciones: cleanText(input.observaciones),
+  });
+
+  if (input.tipo === "FOTO") {
+    await actualizarFotoPrincipalActivo(input.activoId, publicUrl);
+  }
+
+  return documento;
+}
+
+export async function eliminarDocumentoActivo(documento: DocumentoActivo) {
+  const table = documento.sourceTable || "documentos_activo";
+
+  const softDelete = await supabase
+    .from(table)
+    .update({ estado: "Inactivo" })
+    .eq("id", documento.id)
     .select()
     .single();
 
-  if (error) {
-    throw error;
+  if (!softDelete.error) {
+    return normalizeDocumento(
+      softDelete.data as Record<string, unknown>,
+      table
+    );
   }
 
-  return normalizeDocumento(data as Record<string, unknown>);
+  if (!isMissingColumnError(softDelete.error, "estado")) {
+    throw softDelete.error;
+  }
+
+  const hardDelete = await supabase.from(table).delete().eq("id", documento.id);
+
+  if (hardDelete.error) {
+    throw hardDelete.error;
+  }
+
+  return null;
 }
 
 function calcularIndicadores(ordenes: OrdenTrabajo[]): IndicadoresActivo {

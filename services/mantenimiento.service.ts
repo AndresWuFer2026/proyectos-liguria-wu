@@ -6,24 +6,30 @@ import {
 } from "@/services/supabase-error";
 
 export const estadosOrdenTrabajo = [
-  "BORRADOR",
-  "PENDIENTE_APROBACION",
-  "APROBADA",
-  "ASIGNADA",
+  "PROGRAMADA",
+  "PENDIENTE",
   "EN_EJECUCION",
-  "PENDIENTE_VALIDACION",
+  "VALIDACION",
   "CERRADA",
-  "RECHAZADA",
-  "REPROGRAMADA",
   "CANCELADA",
 ] as const;
 
 export type EstadoOrdenTrabajo = (typeof estadosOrdenTrabajo)[number];
 
+export const estadoOrdenTrabajoLabels: Record<EstadoOrdenTrabajo, string> = {
+  PROGRAMADA: "Programada",
+  PENDIENTE: "Pendiente",
+  EN_EJECUCION: "En ejecución",
+  VALIDACION: "Validación",
+  CERRADA: "Cerrada",
+  CANCELADA: "Cancelada",
+};
+
 export type OrdenTrabajo = {
   id: string;
   codigo: string;
   activoId: string | null;
+  parteId: string | null;
   activoCodigo: string | null;
   activoNombre: string | null;
   tipoMantenimiento: string | null;
@@ -40,11 +46,12 @@ export type OrdenTrabajo = {
   horasHombre: number | null;
   estadoFinal: string | null;
   observacionesEjecucion: string | null;
-  estado: EstadoOrdenTrabajo | string;
+  estado: EstadoOrdenTrabajo;
 };
 
 export type OrdenTrabajoInput = {
   activoId: string;
+  parteId?: string;
   tipoMantenimiento: string;
   especialidad: string;
   responsable: string;
@@ -167,8 +174,37 @@ function addDaysIsoDate(date: string, days: number) {
   return base.toISOString().slice(0, 10);
 }
 
-function normalizeEstado(value: string | null) {
-  return value || "BORRADOR";
+export function normalizeEstadoOrdenTrabajo(
+  value: string | null | undefined
+): EstadoOrdenTrabajo {
+  const normalized = String(value ?? "").trim().toUpperCase();
+
+  if (normalized === "PROGRAMADA") return "PROGRAMADA";
+  if (normalized === "APROBADA") return "PROGRAMADA";
+  if (normalized === "ASIGNADA") return "PROGRAMADA";
+  if (normalized === "REPROGRAMADA") return "PROGRAMADA";
+  if (normalized === "PENDIENTE") return "PENDIENTE";
+  if (normalized === "BORRADOR") return "PENDIENTE";
+  if (normalized === "PENDIENTE_APROBACION") return "PENDIENTE";
+  if (normalized === "EN_EJECUCION") return "EN_EJECUCION";
+  if (normalized === "VALIDACION") return "VALIDACION";
+  if (normalized === "PENDIENTE_VALIDACION") return "VALIDACION";
+  if (normalized === "CERRADA") return "CERRADA";
+  if (normalized === "CANCELADA") return "CANCELADA";
+  if (normalized === "RECHAZADA") return "CANCELADA";
+
+  return "PENDIENTE";
+}
+
+export function getEstadoOrdenTrabajoLabel(
+  estado: string | null | undefined
+) {
+  return estadoOrdenTrabajoLabels[normalizeEstadoOrdenTrabajo(estado)];
+}
+
+export function isEstadoOrdenTrabajoFinal(estado: string | null | undefined) {
+  const normalized = normalizeEstadoOrdenTrabajo(estado);
+  return normalized === "CERRADA" || normalized === "CANCELADA";
 }
 
 function normalizeFichaTipo(value: string | null | undefined) {
@@ -312,15 +348,16 @@ function normalizeOrdenTrabajo(row: DbRow, activos: Map<string, {
   codigo: string | null;
   nombre: string | null;
 }>): OrdenTrabajo {
-  const activoId = stringField(row, ["equipo_id", "activo_id", "equipo"]);
+  const activoId = stringField(row, ["activo_id", "equipo_id", "asset_id", "equipo"]);
   const activo = activoId ? activos.get(activoId) : null;
 
   return {
     id: String(row.id),
     codigo:
-      stringField(row, ["codigo_ot", "codigo", "numero_ot"]) ||
+      stringField(row, ["codigo", "codigo_ot", "numero_ot"]) ||
       `OT-${String(row.id).slice(0, 8)}`,
     activoId,
+    parteId: stringField(row, ["parte_id"]),
     activoCodigo: activo?.codigo ?? null,
     activoNombre:
       activo?.nombre ?? stringField(row, ["activo", "equipo_nombre"]),
@@ -360,7 +397,7 @@ function normalizeOrdenTrabajo(row: DbRow, activos: Map<string, {
       "observaciones_ejecucion",
       "observaciones",
     ]),
-    estado: normalizeEstado(stringField(row, ["estado"])),
+    estado: normalizeEstadoOrdenTrabajo(stringField(row, ["estado"])),
   };
 }
 
@@ -368,7 +405,7 @@ function normalizeProgramaMantenimiento(row: DbRow, activos: Map<string, {
   codigo: string | null;
   nombre: string | null;
 }>): ProgramaMantenimiento {
-  const activoId = stringField(row, ["equipo_id", "activo_id", "equipo"]);
+  const activoId = stringField(row, ["activo_id", "equipo_id", "asset_id", "equipo"]);
   const activo = activoId ? activos.get(activoId) : null;
 
   return {
@@ -406,7 +443,7 @@ export async function listarOrdenesTrabajo() {
   const activoIds = Array.from(
     new Set(
       rows
-        .map((row) => stringField(row, ["equipo_id", "activo_id", "equipo"]))
+        .map((row) => stringField(row, ["activo_id", "equipo_id", "asset_id", "equipo"]))
         .filter((id): id is string => Boolean(id))
     )
   );
@@ -433,7 +470,7 @@ export async function obtenerOrdenTrabajoPorId(id: string) {
   }
 
   const row = data as DbRow;
-  const activoId = stringField(row, ["equipo_id", "activo_id", "equipo"]);
+  const activoId = stringField(row, ["activo_id", "equipo_id", "asset_id", "equipo"]);
   const activos = await obtenerActivosMap(activoId ? [activoId] : []);
 
   return normalizeOrdenTrabajo(row, activos);
@@ -459,7 +496,7 @@ export async function listarProgramasMantenimiento() {
   const activoIds = Array.from(
     new Set(
       rows
-        .map((row) => stringField(row, ["equipo_id", "activo_id", "equipo"]))
+        .map((row) => stringField(row, ["activo_id", "equipo_id", "asset_id", "equipo"]))
         .filter((id): id is string => Boolean(id))
     )
   );
@@ -476,10 +513,14 @@ export async function generarCodigoOrdenTrabajo() {
 
   const { data, error } = await supabase
     .from("ordenes_trabajo")
-    .select("codigo_ot")
-    .like("codigo_ot", `${prefijo}-%`);
+    .select("codigo,codigo_ot")
+    .or(`codigo.like.${prefijo}-%,codigo_ot.like.${prefijo}-%`);
 
-  if (error && !isMissingColumnError(error, "codigo_ot")) {
+  if (
+    error &&
+    !isMissingColumnError(error, "codigo") &&
+    !isMissingColumnError(error, "codigo_ot")
+  ) {
     throw error;
   }
 
@@ -487,9 +528,10 @@ export async function generarCodigoOrdenTrabajo() {
     return `${prefijo}-${String(Date.now()).slice(-4)}`;
   }
 
-  const mayorCorrelativo = ((data ?? []) as { codigo_ot: string }[]).reduce(
+  const mayorCorrelativo = ((data ?? []) as DbRow[]).reduce(
     (mayor, item) => {
-      const match = item.codigo_ot?.match(/-(\d+)$/);
+      const codigo = stringField(item, ["codigo", "codigo_ot"]);
+      const match = codigo?.match(/-(\d+)$/);
       const correlativo = match ? Number(match[1]) : 0;
       return Number.isFinite(correlativo)
         ? Math.max(mayor, correlativo)
@@ -503,8 +545,12 @@ export async function generarCodigoOrdenTrabajo() {
 
 export async function crearOrdenTrabajo(input: OrdenTrabajoInput) {
   const codigoOt = await generarCodigoOrdenTrabajo();
-  const basePayload: InsertPayload = {
+  const payload: InsertPayload = {
+    codigo: codigoOt,
     codigo_ot: codigoOt,
+    activo_id: input.activoId,
+    equipo_id: input.activoId,
+    parte_id: input.parteId || null,
     tipo_mantenimiento: input.tipoMantenimiento,
     especialidad: input.especialidad,
     responsable: input.responsable,
@@ -512,53 +558,19 @@ export async function crearOrdenTrabajo(input: OrdenTrabajoInput) {
     duracion_estimada_horas: parseHoras(input.duracionEstimadaHoras),
     descripcion: input.descripcion,
     prioridad: input.prioridad || "MEDIA",
-    estado: "PENDIENTE_APROBACION",
+    estado: "PENDIENTE",
   };
 
-  const payloads: Array<{
-    data: InsertPayload;
-    requiredColumns: string[];
-  }> = [
-    {
-      data: { ...basePayload, equipo_id: input.activoId },
-      requiredColumns: ["equipo_id"],
-    },
-    {
-      data: { ...basePayload, activo_id: input.activoId },
-      requiredColumns: ["activo_id"],
-    },
-  ];
-
-  let lastError: unknown = null;
-
-  for (const payload of payloads) {
-    try {
-      return await insertWithColumnFallback(
-        "ordenes_trabajo",
-        payload.data,
-        payload.requiredColumns
-      );
-    } catch (error) {
-      lastError = error;
-      if (
-        !isMissingColumnError(error, "equipo_id") &&
-        !isMissingColumnError(error, "activo_id")
-      ) {
-        continue;
-      }
-    }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(getServiceErrorMessage(lastError));
+  return insertWithColumnFallback("ordenes_trabajo", payload);
 }
 
 export async function actualizarEstadoOrdenTrabajo(
   id: string,
   estado: EstadoOrdenTrabajo
 ) {
-  return updateWithColumnFallback("ordenes_trabajo", id, { estado });
+  return updateWithColumnFallback("ordenes_trabajo", id, {
+    estado: normalizeEstadoOrdenTrabajo(estado),
+  });
 }
 
 export async function asignarTecnicoOrdenTrabajo(id: string, tecnico: string) {
@@ -566,7 +578,7 @@ export async function asignarTecnicoOrdenTrabajo(id: string, tecnico: string) {
     tecnico_asignado: tecnico,
     tecnico,
     asignado_a: tecnico,
-    estado: "ASIGNADA",
+    estado: "PROGRAMADA",
   });
 }
 
@@ -581,7 +593,7 @@ export async function reprogramarOrdenTrabajo(id: string, fecha: string) {
   return updateWithColumnFallback("ordenes_trabajo", id, {
     fecha_reprogramada: fecha,
     fecha_programada: fecha,
-    estado: "REPROGRAMADA",
+    estado: "PROGRAMADA",
   });
 }
 
@@ -712,7 +724,7 @@ export async function registrarEjecucionOrdenTrabajo(
     observaciones: input.observaciones,
     observaciones_ejecucion: input.observaciones,
     estado_final: input.estadoFinal || null,
-    estado: "PENDIENTE_VALIDACION",
+    estado: "VALIDACION",
   });
 
   if (input.checklist.trim()) {

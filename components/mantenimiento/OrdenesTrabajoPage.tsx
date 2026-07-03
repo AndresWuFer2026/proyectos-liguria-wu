@@ -8,7 +8,9 @@ import {
   actualizarEstadoOrdenTrabajo,
   cerrarOrdenTrabajo,
   crearOrdenTrabajo,
+  getEstadoOrdenTrabajoLabel,
   iniciarEjecucionOrdenTrabajo,
+  isEstadoOrdenTrabajoFinal,
   listarOrdenesTrabajo,
   registrarEjecucionOrdenTrabajo,
   type EjecucionOrdenTrabajoInput,
@@ -46,8 +48,6 @@ const initialEjecucion: EjecucionOrdenTrabajoInput = {
   estadoFinal: "",
   firmaDigital: "",
 };
-
-const estadosFinales = ["CERRADA", "RECHAZADA", "CANCELADA"];
 
 export function OrdenesTrabajoPage() {
   const searchParams = useSearchParams();
@@ -134,7 +134,7 @@ export function OrdenesTrabajoPage() {
   }, [searchParams]);
 
   const ordenesOperativas = useMemo(
-    () => ordenes.filter((orden) => !estadosFinales.includes(orden.estado)),
+    () => ordenes.filter((orden) => !isEstadoOrdenTrabajoFinal(orden.estado)),
     [ordenes]
   );
 
@@ -190,7 +190,7 @@ export function OrdenesTrabajoPage() {
       }
 
       setStatusType("success");
-      setStatusMessage(`OT actualizada a ${estado}.`);
+      setStatusMessage(`OT actualizada a ${getEstadoOrdenTrabajoLabel(estado)}.`);
       await cargarDatos();
     } catch (error) {
       console.error("Error actualizando OT:", error);
@@ -523,7 +523,7 @@ function OrdenRow({
   onIniciar: (id: string) => void;
   onEjecutar: (id: string) => void;
 }) {
-  const puedeIniciar = orden.estado === "APROBADA" || orden.estado === "ASIGNADA";
+  const puedeIniciar = orden.estado === "PROGRAMADA";
   const puedeEjecutar = orden.estado === "EN_EJECUCION";
 
   return (
@@ -541,7 +541,7 @@ function OrdenRow({
       </td>
       <td className="px-6 py-4">
         <span className="bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-xs font-medium">
-          {orden.estado}
+          {getEstadoOrdenTrabajoLabel(orden.estado)}
         </span>
       </td>
       <td className="px-6 py-4 text-right">
@@ -552,9 +552,9 @@ function OrdenRow({
           >
             Ficha
           </Link>
-          {orden.estado === "PENDIENTE_APROBACION" && (
+          {orden.estado === "PENDIENTE" && (
             <button
-              onClick={() => onCambiarEstado(orden.id, "APROBADA")}
+              onClick={() => onCambiarEstado(orden.id, "PROGRAMADA")}
               className="text-teal-600 font-medium hover:underline"
             >
               Aprobar
