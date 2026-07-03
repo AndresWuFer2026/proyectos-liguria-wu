@@ -1,4 +1,4 @@
-# Product Backlog – WU EAM
+# Product Backlog – Proyecto WU
 ## Proyecto Liguria WU
 
 ## Épica 1: Plataforma base

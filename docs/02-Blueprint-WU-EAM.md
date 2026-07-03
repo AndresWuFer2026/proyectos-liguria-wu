@@ -1,9 +1,9 @@
-# Blueprint – WU EAM
+# Blueprint – Proyecto WU
 ## Proyecto Liguria WU
 
 ### 1. Visión del sistema
 
-WU EAM será una plataforma web para gestionar el ciclo de vida de los activos industriales: registro, documentación técnica, mantenimiento, historial, programa anual, evidencias, reportes e indicadores.
+Proyecto WU será una plataforma web para gestionar el ciclo de vida de los activos industriales: registro, documentación técnica, mantenimiento, historial, programa anual, evidencias, reportes e indicadores.
 
 ---
 
