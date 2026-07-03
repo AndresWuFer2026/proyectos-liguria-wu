@@ -37,7 +37,7 @@ export function LoginPage() {
 
         <div className="max-w-xl">
           <p className="text-sm uppercase tracking-[0.24em] text-teal-200">
-            Proyecto WU Beta v1.0
+            Proyecto para area de mantenimiento - Elab. A. Wu 
           </p>
           <h1 className="mt-4 text-4xl font-bold leading-tight">
             Gestión de activos y mantenimiento para operación industrial.
@@ -48,9 +48,9 @@ export function LoginPage() {
         </div>
 
         <div className="grid grid-cols-3 gap-3 text-sm text-slate-200">
-          <Badge label="Multiempresa" />
-          <Badge label="Multiplanta" />
-          <Badge label="CMMS/EAM" />
+          <Badge label="Gestion" />
+          <Badge label="Mantenimiento" />
+          <Badge label="Activos" />
         </div>
       </section>
 

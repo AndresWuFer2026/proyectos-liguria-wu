@@ -973,7 +973,12 @@ function UploadFoto({
 }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <h3 className="font-semibold text-slate-800">Subir foto del equipo</h3>
+      <h3 className="font-semibold text-slate-800">
+        Cambiar imagen del equipo
+      </h3>
+      <p className="text-sm text-slate-500">
+        La imagen se guarda en el bucket activos y se muestra como foto principal.
+      </p>
       <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 mt-4">
         <input
           className="border border-slate-200 rounded-lg px-4 py-2 text-sm"
@@ -986,7 +991,7 @@ function UploadFoto({
           disabled={uploading}
           className="bg-teal-500 hover:bg-teal-600 disabled:bg-slate-300 text-white rounded-lg px-4 py-2 text-sm font-medium"
         >
-          {uploading ? "Subiendo..." : "Subir foto"}
+          {uploading ? "Subiendo..." : "Actualizar imagen"}
         </button>
       </div>
     </div>

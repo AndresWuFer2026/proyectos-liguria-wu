@@ -5,6 +5,7 @@ import {
   crearActivo,
   generarCodigoActivo,
   listarCatalogosActivo,
+  subirImagenActivo,
   type ActivoInput,
   type FamiliaActivo,
   type TipoEquipo,
@@ -50,6 +51,7 @@ export function NuevoActivoForm({
   const [familiaId, setFamiliaId] = useState("");
   const [tipoEquipoId, setTipoEquipoId] = useState("");
   const [form, setForm] = useState<ActivoInput>(initialForm);
+  const [imagenFile, setImagenFile] = useState<File | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -212,7 +214,12 @@ export function NuevoActivoForm({
 
     try {
       setGuardando(true);
-      await crearActivo(form);
+      const activo = await crearActivo(form);
+
+      if (imagenFile) {
+        await subirImagenActivo(activo.id, imagenFile);
+      }
+
       await onSaved?.();
       onClose();
     } catch (error) {
@@ -337,6 +344,23 @@ export function NuevoActivoForm({
                 value={form.responsable}
                 onChange={(value) => update("responsable", value)}
               />
+
+              <div>
+                <label className="text-sm text-slate-600">
+                  Imagen del activo
+                </label>
+                <input
+                  className="w-full border border-slate-200 rounded-lg px-4 py-2 text-sm mt-1"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) =>
+                    setImagenFile(event.target.files?.[0] ?? null)
+                  }
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Se guardarÃ¡ en el bucket activos / imagenes-activos.
+                </p>
+              </div>
 
               <Select
                 label="Estado operativo"

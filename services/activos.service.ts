@@ -14,6 +14,10 @@ import {
   type ProgramaMantenimiento,
 } from "@/services/mantenimiento.service";
 
+const ACTIVOS_BUCKET = "activos";
+const IMAGENES_ACTIVOS_PATH = "imagenes-activos";
+const DOCUMENTOS_ACTIVOS_PATH = "documentos-activos";
+
 export type FamiliaActivo = {
   id: string;
   nombre: string;
@@ -189,6 +193,17 @@ function sanitizeFileName(value: string) {
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9._-]/g, "");
+}
+
+function buildActivoStoragePath(
+  activoId: string,
+  fileName: string,
+  tipo: DocumentoActivoTipo
+) {
+  const safeName = sanitizeFileName(fileName) || "archivo";
+  const folder = tipo === "FOTO" ? IMAGENES_ACTIVOS_PATH : DOCUMENTOS_ACTIVOS_PATH;
+
+  return `${folder}/${activoId}/${Date.now()}-${safeName}`;
 }
 
 function getString(row: Record<string, unknown>, keys: string[]) {
@@ -586,6 +601,7 @@ async function insertarDocumentoActivoMetadata(input: {
     tipo_archivo: input.tipo,
     url: input.publicUrl,
     storage_path: input.storagePath,
+    uploaded_by: null,
     storage_bucket: input.bucket,
     mime_type: input.mimeType,
     observaciones: input.observaciones,
@@ -613,6 +629,7 @@ async function insertarDocumentoActivoMetadata(input: {
       "tipo_archivo",
       "url",
       "storage_path",
+      "uploaded_by",
       "storage_bucket",
       "mime_type",
       "observaciones",
@@ -744,9 +761,12 @@ export async function eliminarParteActivo(id: string) {
 }
 
 export async function subirDocumentoActivo(input: DocumentoActivoInput) {
-  const bucket = input.tipo === "FOTO" ? "activos-fotos" : "activos-documentos";
-  const safeName = sanitizeFileName(input.file.name) || "archivo";
-  const storagePath = `${input.activoId}/${Date.now()}-${safeName}`;
+  const bucket = ACTIVOS_BUCKET;
+  const storagePath = buildActivoStoragePath(
+    input.activoId,
+    input.file.name,
+    input.tipo
+  );
   const upload = await supabase.storage
     .from(bucket)
     .upload(storagePath, input.file, {
@@ -777,6 +797,16 @@ export async function subirDocumentoActivo(input: DocumentoActivoInput) {
   }
 
   return documento;
+}
+
+export async function subirImagenActivo(activoId: string, file: File) {
+  return subirDocumentoActivo({
+    activoId,
+    tipo: "FOTO",
+    nombre: file.name,
+    observaciones: "Imagen principal del activo.",
+    file,
+  });
 }
 
 export async function eliminarDocumentoActivo(documento: DocumentoActivo) {
